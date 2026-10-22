@@ -44,7 +44,8 @@ the element it missed (date arrow, date header, Reserve button), and paste that 
   cp com.pickleball.courtreserve.plist ~/Library/LaunchAgents/
   launchctl load ~/Library/LaunchAgents/com.pickleball.courtreserve.plist
   ```
-  Your Mac has to be awake and logged in. `sudo pmset repeat wakeorpoweron W 07:50:00` wakes it.
+  Your Mac has to be awake and logged in. `sudo pmset repeat wakeorpoweron R 08:50:00` wakes it Thursdays at 8:50.
 
-Leave `auto_confirm = false` at first: the bot gets you to the pop-up in a fraction of a
-second and you click Save. Switch it to `true` once you trust it.
+Each `[[booking.slots]]` block in the config gets its own window, and they all run at once.
+For practice runs add `--dry-run`, or set `auto_confirm = false`: the bot gets you to the pop-up in a fraction of a
+second and you click Save.

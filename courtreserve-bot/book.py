@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
-"""Grab a CourtReserve court the instant booking opens.
+"""Grab CourtReserve courts the instant booking opens.
+
+Each [[booking.slots]] entry in config.toml is booked by its own browser window, all
+running at the same time, so slot 2 isn't waiting on slot 1.
 
 Usage:
-  python book.py              # wait for open_time, then book
-  python book.py --now        # skip the wait (good for testing on an already-open day)
+  python book.py              # wait for open_time, then book every slot
+  python book.py --now        # skip the wait (test on a day that's already open)
   python book.py --date 2026-10-29 --now --dry-run
+  python book.py --only 1     # run just the first slot (1-based)
   python book.py --explore    # log in and open Playwright Inspector to find selectors
 """
 import argparse
 import os
+import subprocess
 import sys
 import time
 from datetime import date, datetime, timedelta
@@ -24,12 +29,12 @@ from playwright.sync_api import TimeoutError as PWTimeout
 from playwright.sync_api import sync_playwright
 
 HERE = Path(__file__).resolve().parent
-PROFILE_DIR = HERE / "browser-profile"
 SHOTS_DIR = HERE / "screenshots"
+TAG = ""
 
 
 def log(msg):
-    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] {msg}", flush=True)
+    print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}]{TAG} {msg}", flush=True)
 
 
 def load_config(path):
@@ -38,6 +43,8 @@ def load_config(path):
     cfg["account"]["password"] = cfg["account"].get("password") or os.environ.get("CR_PASSWORD", "")
     if not cfg["account"]["password"]:
         sys.exit("No password: set it in config.toml or export CR_PASSWORD.")
+    if not cfg["booking"].get("slots"):
+        sys.exit("No [[booking.slots]] in config.toml.")
     return cfg
 
 
@@ -59,10 +66,9 @@ def login(page, cfg):
     except PWTimeout:
         log("No login form -- already signed in (saved session).")
         return
-    email_field = page.locator(
+    page.locator(
         "input[type='email'], input[name*='mail' i], input[name*='user' i], input[id*='mail' i]"
-    ).first
-    email_field.fill(cfg["account"]["email"])
+    ).first.fill(cfg["account"]["email"])
     pw_field.first.fill(cfg["account"]["password"])
     page.locator("button[type='submit'], input[type='submit'], button:has-text('Log In'), "
                  "button:has-text('Sign In')").first.click()
@@ -87,15 +93,15 @@ def go_to_date(page, cfg, target):
     return False
 
 
-def find_slot(page, cfg):
-    """Return a locator for the best open 'Reserve' button, or None.
+def find_slot(page, cfg, slot):
+    """Return a locator for the best open 'Reserve' button for this slot, or None.
 
     Matches a Reserve button whose own attributes or surrounding row/cell text mention
     the wanted start time (and court, if configured). Tries preferences in order.
     """
     btn_text = cfg["selectors"]["reserve_button_text"]
-    courts = cfg["booking"].get("courts") or [""]
-    for t in cfg["booking"]["times"]:
+    courts = slot.get("courts") or cfg["booking"].get("courts") or [""]
+    for t in slot["times"]:
         for court in courts:
             idx = page.evaluate(
                 """([btnText, time, court]) => {
@@ -122,26 +128,41 @@ def find_slot(page, cfg):
     return None
 
 
-def fill_modal(page, cfg, dry_run):
-    b = cfg["booking"]
-    for label, value in (("Reservation Type", b.get("reservation_type")), ("Duration", b.get("duration"))):
-        if not value:
-            continue
-        try:
-            page.get_by_label(label, exact=False).select_option(label=value, timeout=1500)
-        except Exception:
-            # CourtReserve often uses Kendo dropdowns instead of <select>.
-            try:
-                page.locator(f"text={label}").locator("xpath=following::span[contains(@class,'k-dropdown') or contains(@class,'k-picker')][1]").click(timeout=1500)
-                page.locator(f"li:has-text('{value}')").first.click(timeout=1500)
-            except Exception:
-                log(f"Couldn't set {label} = {value}; leaving default.")
+def set_dropdown(page, label, value):
+    """Pick `value` in the field labelled `label` (native <select> or Kendo dropdown)."""
+    try:
+        page.get_by_label(label, exact=False).select_option(label=value, timeout=1500)
+        return True
+    except Exception:
+        pass
+    try:
+        page.locator(f"text={label}").first.locator(
+            "xpath=following::*[contains(@class,'k-dropdown') or contains(@class,'k-picker')"
+            " or contains(@class,'k-combobox')][1]"
+        ).click(timeout=1500)
+        page.locator(f"li:visible:has-text('{value}')").first.click(timeout=1500)
+        return True
+    except Exception:
+        log(f"Couldn't set {label} = {value}; leaving default.")
+        return False
+
+
+def fill_modal(page, cfg, slot, dry_run):
+    b, sel = cfg["booking"], cfg["selectors"]
+    fields = (
+        (sel["member_field_label"], slot.get("member")),
+        (sel["reservation_type_label"], b.get("reservation_type")),
+        (sel["duration_label"], slot.get("duration") or b.get("duration")),
+    )
+    for label, value in fields:
+        if value:
+            set_dropdown(page, label, value)
 
     if dry_run or not b.get("auto_confirm"):
         log("Pop-up is open. Finish it yourself (dry-run or auto_confirm=false).")
         return None
 
-    for txt in cfg["selectors"]["confirm_button_texts"]:
+    for txt in sel["confirm_button_texts"]:
         btn = page.locator(f".modal button:has-text('{txt}'), [role=dialog] button:has-text('{txt}'), "
                            f".k-window button:has-text('{txt}')")
         if btn.count():
@@ -154,23 +175,27 @@ def fill_modal(page, cfg, dry_run):
 
     for _ in range(40):
         body = page.locator("body").inner_text().lower()
-        if any(s in body for s in cfg["selectors"]["success_texts"]):
+        if any(s in body for s in sel["success_texts"]):
             return True
         page.wait_for_timeout(250)
     return False
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--config", default=str(HERE / "config.toml"))
-    ap.add_argument("--date", help="Court date YYYY-MM-DD (default: today + days_ahead)")
-    ap.add_argument("--now", action="store_true", help="Don't wait for open_time")
-    ap.add_argument("--dry-run", action="store_true", help="Open the booking pop-up but never submit")
-    ap.add_argument("--headless", action="store_true")
-    ap.add_argument("--explore", action="store_true", help="Log in, then pause in Playwright Inspector")
-    args = ap.parse_args()
+def keep_open(page, headless):
+    """Leave the window up for a human until they close it."""
+    if headless:
+        return
+    log("Leaving the window open -- close it when you're done.")
+    try:
+        page.wait_for_event("close", timeout=0)
+    except Exception:
+        pass
 
-    cfg = load_config(args.config)
+
+def run_slot(cfg, slot_no, args):
+    global TAG
+    slot = cfg["booking"]["slots"][slot_no - 1]
+    TAG = f" [slot {slot_no}: {slot['times'][0]}{' / ' + slot['member'] if slot.get('member') else ''}]"
     tz = ZoneInfo(cfg["club"].get("timezone", "America/New_York"))
     t = cfg["timing"]
 
@@ -187,8 +212,10 @@ def main():
 
     SHOTS_DIR.mkdir(exist_ok=True)
     with sync_playwright() as p:
+        # Each slot needs its own profile dir: Chrome won't share one between windows.
         ctx = p.chromium.launch_persistent_context(
-            str(PROFILE_DIR), headless=args.headless, viewport={"width": 1400, "height": 1000}
+            str(HERE / f"browser-profile-{slot_no}"), headless=args.headless,
+            viewport={"width": 1400, "height": 1000},
         )
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         login(page, cfg)
@@ -197,18 +224,19 @@ def main():
         if args.explore:
             log("Inspector open. Use 'Pick locator' to grab selectors, then close the browser.")
             page.pause()
-            return
+            return 0
 
         go_to_date(page, cfg, target_date)
         sleep_until(open_at - timedelta(milliseconds=t["start_early_ms"]), "polling start")
+        started = time.monotonic()
 
-        deadline = time.monotonic() + t["give_up_after_seconds"]
+        deadline = started + t["give_up_after_seconds"]
         attempt = 0
-        slot = None
+        found = None
         while time.monotonic() < deadline:
             attempt += 1
-            slot = find_slot(page, cfg)
-            if slot:
+            found = find_slot(page, cfg, slot)
+            if found:
                 break
             page.wait_for_timeout(t["refresh_interval_ms"])
             # Re-render the day: reload, then step back to the target date.
@@ -217,25 +245,55 @@ def main():
             if attempt % 20 == 0:
                 log(f"Still no matching slot after {attempt} checks...")
 
-        if not slot:
-            page.screenshot(path=str(SHOTS_DIR / "no-slot.png"), full_page=True)
-            log("Gave up -- no matching slot. Screenshot saved to screenshots/no-slot.png")
-            if not args.headless:
-                input("Browser left open. Press Enter to close...")
-            return
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        if not found:
+            page.screenshot(path=str(SHOTS_DIR / f"no-slot-{slot_no}-{stamp}.png"), full_page=True)
+            log("Gave up -- no matching slot. Screenshot saved in screenshots/.")
+            keep_open(page, args.headless)
+            return 1
 
-        slot.click()
-        log("Clicked Reserve.")
+        found.click()
+        log(f"Clicked Reserve ({time.monotonic() - started:.2f}s after polling started).")
         page.wait_for_timeout(300)
-        result = fill_modal(page, cfg, args.dry_run)
-        page.screenshot(path=str(SHOTS_DIR / f"result-{datetime.now():%Y%m%d-%H%M%S}.png"), full_page=True)
+        result = fill_modal(page, cfg, slot, args.dry_run)
+        page.screenshot(path=str(SHOTS_DIR / f"result-{slot_no}-{stamp}.png"), full_page=True)
+        log(f"Done in {time.monotonic() - started:.2f}s after polling started.")
         if result:
-            log("Booked! Check your email / My Reservations to confirm.")
-        elif result is False:
+            log("BOOKED! Check your email / My Reservations to confirm.")
+            ctx.close()
+            return 0
+        if result is False:
             log("Submitted but didn't see a success message -- check the screenshot / site.")
-        if not args.headless:
-            input("Press Enter to close the browser...")
+        keep_open(page, args.headless)
         ctx.close()
+        return 0 if result is None else 1
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--config", default=str(HERE / "config.toml"))
+    ap.add_argument("--date", help="Court date YYYY-MM-DD (default: today + days_ahead)")
+    ap.add_argument("--now", action="store_true", help="Don't wait for open_time")
+    ap.add_argument("--dry-run", action="store_true", help="Open the booking pop-up but never submit")
+    ap.add_argument("--headless", action="store_true")
+    ap.add_argument("--explore", action="store_true", help="Log in, then pause in Playwright Inspector")
+    ap.add_argument("--only", type=int, help="Run just this slot number (1-based)")
+    args = ap.parse_args()
+
+    cfg = load_config(args.config)
+    n = len(cfg["booking"]["slots"])
+
+    if args.only or args.explore or n == 1:
+        sys.exit(run_slot(cfg, args.only or 1, args))
+
+    # One process per slot so they all hit the site at the same instant.
+    child_args = [a for a in sys.argv[1:]]
+    procs = [subprocess.Popen([sys.executable, __file__, *child_args, "--only", str(i)])
+             for i in range(1, n + 1)]
+    codes = [proc.wait() for proc in procs]
+    print("\nSummary:", ", ".join(f"slot {i}: {'ok' if c == 0 else 'FAILED'}"
+                                 for i, c in enumerate(codes, 1)))
+    sys.exit(max(codes))
 
 
 if __name__ == "__main__":
