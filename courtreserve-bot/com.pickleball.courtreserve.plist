@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- Runs the bot every Thursday at 8:57 AM (Mac local time), 3 min before the 9:00 AM release.
      Change Weekday/Hour/Minute to match YOUR club's release time (Weekday: 0=Sun ... 3=Wed).
-     Replace /Users/lfhops/claude/courtreserve-bot with the real folder path. -->
+     Paths point at ~/claude/courtreserve-bot on the iMac (user lfhops). -->
 <plist version="1.0">
 <dict>
   <key>Label</key><string>com.pickleball.courtreserve</string>
