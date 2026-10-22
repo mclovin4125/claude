@@ -1,0 +1,44 @@
+# Copy to config.toml and fill in. config.toml is git-ignored (it holds your password).
+
+[account]
+email = "you@example.com"
+# Leave blank to read from the CR_PASSWORD environment variable instead (recommended).
+password = ""
+
+[club]
+# Log into CourtReserve in a normal browser and copy these URLs from the address bar.
+# Login page usually looks like: https://app.courtreserve.com/Online/Account/LogIn/12345
+login_url = "https://app.courtreserve.com/Online/Account/LogIn/XXXXX"
+# The "Book a Court" / reservations page for pickleball:
+booking_url = "https://app.courtreserve.com/Online/Reservations/Bookings/XXXXX?sId=XXXX"
+timezone = "America/New_York"
+
+[booking]
+# When does your club release Wednesday's courts? e.g. 7 days ahead at 08:00.
+days_ahead = 7
+open_time = "08:00:00"
+# Slot start times you want, in order of preference (must match how the site shows them).
+times = ["6:00 PM", "6:30 PM", "7:00 PM"]
+# Optional court preference, in order (leave empty = any court).
+courts = []
+# Optional: values to pick in the reservation pop-up (leave blank to keep site defaults).
+reservation_type = ""
+duration = ""          # e.g. "90 Minutes"
+# true = bot clicks the final Save/Confirm button. false = bot opens the pop-up and you click Save.
+auto_confirm = false
+
+[timing]
+prewarm_seconds = 90       # log in & load the page this long before open
+start_early_ms = 1500      # begin refreshing this long before the official open time
+refresh_interval_ms = 250  # how often to re-check for the slot once polling
+give_up_after_seconds = 120
+
+[selectors]
+# Defaults are best guesses for CourtReserve's Kendo-based scheduler. If the bot can't find
+# something, run `python book.py --explore` and adjust these.
+next_day = ".k-nav-next, button[title='Next'], a[title='Next']"
+current_date = ".k-nav-current, .k-lg-date-format, .k-sm-date-format"
+date_format = "%A, %B %-d, %Y"   # how the header shows dates, e.g. "Wednesday, October 29, 2026"
+reserve_button_text = "Reserve"
+confirm_button_texts = ["Save", "Confirm", "Reserve", "Book"]
+success_texts = ["successfully", "confirmed", "has been created"]

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Runs the bot every Wednesday at 7:57 AM (Mac local time), 3 min before an 8:00 open.
+     Change Weekday/Hour/Minute to match YOUR club's release time (Weekday: 0=Sun ... 3=Wed).
+     Replace /Users/YOU/courtreserve-bot with the real folder path. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.pickleball.courtreserve</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/YOU/courtreserve-bot/.venv/bin/python</string>
+    <string>/Users/YOU/courtreserve-bot/book.py</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/YOU/courtreserve-bot</string>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key><integer>3</integer>
+    <key>Hour</key><integer>7</integer>
+    <key>Minute</key><integer>57</integer>
+  </dict>
+  <key>StandardOutPath</key><string>/Users/YOU/courtreserve-bot/bot.log</string>
+  <key>StandardErrorPath</key><string>/Users/YOU/courtreserve-bot/bot.log</string>
+</dict>
+</plist>

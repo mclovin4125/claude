@@ -1,0 +1,5 @@
+config.toml
+browser-profile/
+screenshots/
+*.log
+__pycache__/
