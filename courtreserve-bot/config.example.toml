@@ -32,17 +32,17 @@ courts = []
 [[booking.slots]]
 times = ["7:00 PM"]
 courts = ["Court #4"]
-member = "Person One"
+member = "Cassie Dillman"
 
 [[booking.slots]]
 times = ["7:00 PM"]
 courts = ["Court #5"]
-member = "Person Two"
+member = "Mack Lane"
 
 [[booking.slots]]
 times = ["7:00 PM"]
 courts = ["Court #6"]
-member = "Person Three"
+member = "Brody Lane"
 
 [timing]
 prewarm_seconds = 90       # log in & load the page this long before open
