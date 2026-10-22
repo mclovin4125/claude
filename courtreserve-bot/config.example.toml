@@ -31,17 +31,17 @@ courts = []
 # member: the person on your account to book it under, exactly as shown in the pop-up.
 [[booking.slots]]
 times = ["7:00 PM"]
-courts = ["Court 4"]
+courts = ["Court #4"]
 member = "Person One"
 
 [[booking.slots]]
 times = ["7:00 PM"]
-courts = ["Court 5"]
+courts = ["Court #5"]
 member = "Person Two"
 
 [[booking.slots]]
 times = ["7:00 PM"]
-courts = ["Court 6"]
+courts = ["Court #6"]
 member = "Person Three"
 
 [timing]
@@ -53,9 +53,8 @@ give_up_after_seconds = 120
 [selectors]
 # Defaults are best guesses for CourtReserve's Kendo-based scheduler. If the bot can't find
 # something, run `python book.py --explore` and adjust these.
-next_day = ".k-nav-next, button[title='Next'], a[title='Next']"
-current_date = ".k-nav-current, .k-lg-date-format, .k-sm-date-format"
-date_format = "%A, %B %-d, %Y"   # how the header shows dates, e.g. "Wednesday, October 29, 2026"
+next_day = ""   # blank = auto-detect the ">" arrow next to the date
+date_format = "%A, %B %-d"   # header shows e.g. "Wednesday, October 28"
 reserve_button_text = "Reserve"
 # Labels next to the dropdowns in the reservation pop-up.
 member_field_label = "Member"

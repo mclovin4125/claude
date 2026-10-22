@@ -77,28 +77,62 @@ def login(page, cfg):
 
 
 def go_to_date(page, cfg, target):
-    """Click the scheduler's next-day arrow until the header shows the target date."""
-    sel = cfg["selectors"]
-    want = target.strftime(sel["date_format"])
-    header = page.locator(sel["current_date"]).first
+    """Step the scheduler forward until its date header shows the target date.
+
+    Returns False quickly if the next-day arrow is disabled (day not open yet).
+    """
+    want = target.strftime(cfg["selectors"]["date_format"])
     for _ in range(31):
-        try:
-            if want.lower() in header.inner_text(timeout=2000).lower():
-                return True
-        except PWTimeout:
-            pass
-        page.locator(sel["next_day"]).first.click()
-        page.wait_for_timeout(150)
-    log(f"Couldn't find date header '{want}'. Check [selectors] current_date/date_format.")
+        state = page.evaluate(
+            """([want, nextSel]) => {
+                const norm = s => (s || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+                const dateRe = /^(mon|tues|wednes|thurs|fri|satur|sun)day, [a-z]+ \\d{1,2}(, \\d{4})?$/;
+                const header = [...document.querySelectorAll('button, a, span, div, h1, h2, h3, label')]
+                    .find(el => el.offsetParent !== null && dateRe.test(norm(el.innerText)));
+                if (!header) return 'no-header';
+                if (norm(header.innerText).startsWith(norm(want))) return 'ok';
+                document.querySelectorAll('[data-crbot-next]').forEach(e => e.removeAttribute('data-crbot-next'));
+                let next = nextSel ? document.querySelector(nextSel) : null;
+                if (!next) {
+                    // The ">" arrow: the visible button sitting closest to the left of the date header.
+                    const h = header.getBoundingClientRect();
+                    let best = null, bestGap = 1e9;
+                    for (const b of document.querySelectorAll('button, a, [role=button]')) {
+                        if (b.offsetParent === null || b.contains(header) || header.contains(b)) continue;
+                        const r = b.getBoundingClientRect();
+                        const gap = h.left - r.right;
+                        if (gap >= -2 && gap < bestGap && r.top < h.bottom && r.bottom > h.top) { best = b; bestGap = gap; }
+                    }
+                    next = best;
+                }
+                if (!next) return 'no-next';
+                if (next.disabled || next.getAttribute('aria-disabled') === 'true' ||
+                    /disabled/.test(next.className)) return 'disabled';
+                next.setAttribute('data-crbot-next', '1');
+                return 'click';
+            }""",
+            [want, cfg["selectors"].get("next_day", "")],
+        )
+        if state == "ok":
+            return True
+        if state == "click":
+            try:
+                page.locator("[data-crbot-next]").first.click(timeout=1000)
+            except PWTimeout:
+                return False
+            page.wait_for_timeout(150)
+            continue
+        if state != "disabled":
+            log(f"Date navigation problem: {state} (looking for '{want}').")
+        return False
     return False
 
 
 def find_slot(page, cfg, slot):
     """Return a locator for the best open 'Reserve' button for this slot, or None.
 
-    A button matches a time/court if its own attributes or surrounding row/cell text
-    mention it, or if it lines up on screen with a label showing exactly that text
-    (court names are usually column headers, times are row labels down the side).
+    A button matches a time if its text is e.g. "Reserve 7:00 PM" (or it lines up with a
+    "7:00 PM" row label), and a court if it sits under that court's column header.
     Tries preferences in order.
     """
     btn_text = cfg["selectors"]["reserve_button_text"]
@@ -109,25 +143,30 @@ def find_slot(page, cfg, slot):
                 """([btnText, time, court]) => {
                     const norm = s => (s || '').replace(/\\s+/g, ' ').trim().toLowerCase();
                     const visible = el => el.offsetParent !== null;
-                    // Leaf-ish elements whose whole text is exactly `text`.
-                    const labels = text => [...document.querySelectorAll('th, td, div, span, label')]
-                        .filter(el => visible(el) && norm(el.innerText) === norm(text))
+                    // Elements whose own text starts with `text` (header cells also hold a subtitle).
+                    const labels = text => [...document.querySelectorAll('th, td, div, span, label, p')]
+                        .filter(el => visible(el) && el.children.length === 0 &&
+                                      norm(el.innerText) === norm(text))
                         .map(el => (el.closest('th, td') || el).getBoundingClientRect());
                     const timeLabels = labels(time);
                     const courtLabels = court ? labels(court) : [];
-                    const btns = [...document.querySelectorAll('button, a')]
-                        .filter(b => norm(b.innerText) === norm(btnText) && visible(b));
+                    const bt = norm(btnText), tt = norm(time);
+                    // Innermost elements reading exactly "Reserve" or "Reserve <time>".
+                    const btns = [...document.querySelectorAll('button, a, [role=button], div, span')]
+                        .filter(b => {
+                            if (!visible(b)) return false;
+                            const x = norm(b.innerText);
+                            if (!(x === bt || x.startsWith(bt + ' '))) return false;
+                            return ![...b.children].some(c => norm(c.innerText) === x);
+                        });
                     for (let i = 0; i < btns.length; i++) {
                         const b = btns[i];
                         const r = b.getBoundingClientRect();
                         const cx = (r.left + r.right) / 2;
-                        const attrs = norm([...b.attributes].map(a => a.value).join(' '));
-                        const ctx = norm((b.closest('tr, td, [role=row], [class*=slot]') || b.parentElement).innerText);
-                        const hay = attrs + ' ' + ctx;
-                        const timeOk = hay.includes(norm(time)) ||
-                            timeLabels.some(l => l.top < r.bottom && l.bottom > r.top);
-                        const courtOk = !court || new RegExp('(^|\\\\W)' + norm(court) + '($|\\\\W)').test(hay) ||
-                            courtLabels.some(l => l.left <= cx && l.right >= cx);
+                        const text = norm(b.innerText);
+                        const timeOk = text === bt + ' ' + tt ||
+                            (text === bt && timeLabels.some(l => l.top < r.bottom && l.bottom > r.top));
+                        const courtOk = !court || courtLabels.some(l => l.left <= cx && l.right >= cx);
                         if (timeOk && courtOk) {
                             b.setAttribute('data-crbot', 'pick');
                             return i;
@@ -217,6 +256,8 @@ def run_slot(cfg, slot_no, args):
     today = datetime.now(tz).date()
     target_date = date.fromisoformat(args.date) if args.date else today + timedelta(days=cfg["booking"]["days_ahead"])
     open_at = datetime.combine(today, datetime.strptime(cfg["booking"]["open_time"], "%H:%M:%S").time(), tz)
+    if args.open_at:
+        open_at = datetime.combine(today, datetime.strptime(args.open_at, "%H:%M:%S").time(), tz)
     if args.now or args.explore:
         open_at = datetime.now(tz)
     log(f"Target court date: {target_date:%A %Y-%m-%d}; booking opens {open_at:%H:%M:%S}")
@@ -241,7 +282,8 @@ def run_slot(cfg, slot_no, args):
             page.pause()
             return 0
 
-        go_to_date(page, cfg, target_date)
+        if not go_to_date(page, cfg, target_date):
+            log("Target day not reachable yet (expected before open) -- will keep trying.")
         sleep_until(open_at - timedelta(milliseconds=t["start_early_ms"]), "polling start")
         started = time.monotonic()
 
@@ -256,7 +298,9 @@ def run_slot(cfg, slot_no, args):
             page.wait_for_timeout(t["refresh_interval_ms"])
             # Re-render the day: reload, then step back to the target date.
             page.reload(wait_until="domcontentloaded")
-            go_to_date(page, cfg, target_date)
+            page.wait_for_timeout(300)
+            if not go_to_date(page, cfg, target_date):
+                continue
             if attempt % 20 == 0:
                 log(f"Still no matching slot after {attempt} checks...")
 
@@ -292,6 +336,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="Open the booking pop-up but never submit")
     ap.add_argument("--headless", action="store_true")
     ap.add_argument("--explore", action="store_true", help="Log in, then pause in Playwright Inspector")
+    ap.add_argument("--open-at", help="Override open time today, HH:MM:SS (club timezone)")
     ap.add_argument("--only", type=int, help="Run just this slot number (1-based)")
     args = ap.parse_args()
 
