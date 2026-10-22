@@ -2,23 +2,23 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- Runs the bot every Thursday at 8:57 AM (Mac local time), 3 min before the 9:00 AM release.
      Change Weekday/Hour/Minute to match YOUR club's release time (Weekday: 0=Sun ... 3=Wed).
-     Replace /Users/YOU/courtreserve-bot with the real folder path. -->
+     Replace /Users/lfhops/claude/courtreserve-bot with the real folder path. -->
 <plist version="1.0">
 <dict>
   <key>Label</key><string>com.pickleball.courtreserve</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/YOU/courtreserve-bot/.venv/bin/python</string>
-    <string>/Users/YOU/courtreserve-bot/book.py</string>
+    <string>/Users/lfhops/claude/courtreserve-bot/.venv/bin/python</string>
+    <string>/Users/lfhops/claude/courtreserve-bot/book.py</string>
   </array>
-  <key>WorkingDirectory</key><string>/Users/YOU/courtreserve-bot</string>
+  <key>WorkingDirectory</key><string>/Users/lfhops/claude/courtreserve-bot</string>
   <key>StartCalendarInterval</key>
   <dict>
     <key>Weekday</key><integer>4</integer>
     <key>Hour</key><integer>8</integer>
     <key>Minute</key><integer>57</integer>
   </dict>
-  <key>StandardOutPath</key><string>/Users/YOU/courtreserve-bot/bot.log</string>
-  <key>StandardErrorPath</key><string>/Users/YOU/courtreserve-bot/bot.log</string>
+  <key>StandardOutPath</key><string>/Users/lfhops/claude/courtreserve-bot/bot.log</string>
+  <key>StandardErrorPath</key><string>/Users/lfhops/claude/courtreserve-bot/bot.log</string>
 </dict>
 </plist>

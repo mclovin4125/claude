@@ -314,6 +314,11 @@ def run_slot(cfg, slot_no, args):
         found.click()
         log(f"Clicked Reserve ({time.monotonic() - started:.2f}s after polling started).")
         page.wait_for_timeout(300)
+        if args.dry_run:
+            # Save the pop-up so selectors can be tuned against the real page.
+            page.wait_for_timeout(1000)
+            (SHOTS_DIR / f"popup-{slot_no}-{stamp}.html").write_text(page.content())
+            page.screenshot(path=str(SHOTS_DIR / f"popup-{slot_no}-{stamp}.png"), full_page=True)
         result = fill_modal(page, cfg, slot, args.dry_run)
         page.screenshot(path=str(SHOTS_DIR / f"result-{slot_no}-{stamp}.png"), full_page=True)
         log(f"Done in {time.monotonic() - started:.2f}s after polling started.")
