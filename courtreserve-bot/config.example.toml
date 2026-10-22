@@ -19,7 +19,7 @@ days_ahead = 6
 open_time = "09:00:00"
 # Values picked in the reservation pop-up (leave blank to keep the site default).
 reservation_type = "Doubles"
-duration = ""          # e.g. "60 Minutes" -- set if the pop-up doesn't default to what you want
+duration = "1 hour 30 minutes"  # 7:00-8:30. Change to match the pop-up's wording exactly, e.g. "90 Minutes"
 # true = bot clicks the final Save/Confirm button. false = bot opens the pop-up and you click Save.
 auto_confirm = true
 # Optional court preference for every slot, in order (empty = any court).
@@ -27,17 +27,21 @@ courts = []
 
 # One block per court you want. All of them run at the same time, each in its own window.
 # times: start times in order of preference, written exactly as the site shows them.
+# courts: court names in order of preference, exactly as the column headers show them.
 # member: the person on your account to book it under, exactly as shown in the pop-up.
 [[booking.slots]]
-times = ["4:00 PM"]
+times = ["7:00 PM"]
+courts = ["Court 4"]
 member = "Person One"
 
 [[booking.slots]]
-times = ["5:00 PM"]
+times = ["7:00 PM"]
+courts = ["Court 5"]
 member = "Person Two"
 
 [[booking.slots]]
-times = ["6:00 PM"]
+times = ["7:00 PM"]
+courts = ["Court 6"]
 member = "Person Three"
 
 [timing]

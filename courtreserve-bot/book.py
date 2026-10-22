@@ -96,8 +96,10 @@ def go_to_date(page, cfg, target):
 def find_slot(page, cfg, slot):
     """Return a locator for the best open 'Reserve' button for this slot, or None.
 
-    Matches a Reserve button whose own attributes or surrounding row/cell text mention
-    the wanted start time (and court, if configured). Tries preferences in order.
+    A button matches a time/court if its own attributes or surrounding row/cell text
+    mention it, or if it lines up on screen with a label showing exactly that text
+    (court names are usually column headers, times are row labels down the side).
+    Tries preferences in order.
     """
     btn_text = cfg["selectors"]["reserve_button_text"]
     courts = slot.get("courts") or cfg["booking"].get("courts") or [""]
@@ -106,14 +108,27 @@ def find_slot(page, cfg, slot):
             idx = page.evaluate(
                 """([btnText, time, court]) => {
                     const norm = s => (s || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+                    const visible = el => el.offsetParent !== null;
+                    // Leaf-ish elements whose whole text is exactly `text`.
+                    const labels = text => [...document.querySelectorAll('th, td, div, span, label')]
+                        .filter(el => visible(el) && norm(el.innerText) === norm(text))
+                        .map(el => (el.closest('th, td') || el).getBoundingClientRect());
+                    const timeLabels = labels(time);
+                    const courtLabels = court ? labels(court) : [];
                     const btns = [...document.querySelectorAll('button, a')]
-                        .filter(b => norm(b.innerText) === norm(btnText) && b.offsetParent !== null);
+                        .filter(b => norm(b.innerText) === norm(btnText) && visible(b));
                     for (let i = 0; i < btns.length; i++) {
                         const b = btns[i];
+                        const r = b.getBoundingClientRect();
+                        const cx = (r.left + r.right) / 2;
                         const attrs = norm([...b.attributes].map(a => a.value).join(' '));
                         const ctx = norm((b.closest('tr, td, [role=row], [class*=slot]') || b.parentElement).innerText);
                         const hay = attrs + ' ' + ctx;
-                        if (hay.includes(norm(time)) && (!court || hay.includes(norm(court)))) {
+                        const timeOk = hay.includes(norm(time)) ||
+                            timeLabels.some(l => l.top < r.bottom && l.bottom > r.top);
+                        const courtOk = !court || new RegExp('(^|\\\\W)' + norm(court) + '($|\\\\W)').test(hay) ||
+                            courtLabels.some(l => l.left <= cx && l.right >= cx);
+                        if (timeOk && courtOk) {
                             b.setAttribute('data-crbot', 'pick');
                             return i;
                         }
