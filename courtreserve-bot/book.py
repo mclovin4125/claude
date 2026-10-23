@@ -13,10 +13,12 @@ Usage:
 """
 import argparse
 import os
+import re
 import subprocess
 import sys
 import time
 from datetime import date, datetime, timedelta
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -38,8 +40,25 @@ def log(msg):
 
 
 def load_config(path):
-    with open(path, "rb") as f:
-        cfg = tomllib.load(f)
+    if not Path(path).exists():
+        sys.exit(f"No config at {path}. Run: cp config.example.toml config.toml")
+    raw = Path(path).read_text(encoding="utf-8")
+    try:
+        cfg = tomllib.loads(raw)
+    except tomllib.TOMLDecodeError as e:
+        m = re.search(r"line (\d+)", str(e))
+        line = raw.splitlines()[int(m.group(1)) - 1] if m else ""
+        hint = ("it has curly quotes -- retype them as straight \" quotes"
+                if re.search("[\u201c\u201d\u2018\u2019]", line)
+                else "every text value needs straight double quotes, e.g. email = \"you@example.com\"")
+        sys.exit(f"config.toml problem: {e}\n  {line.split('=')[0].strip()} = ...  <- {hint}\n"
+                 "  (TextEdit: Edit > Substitutions > uncheck Smart Quotes)")
+    missing = [k for k, v in (("email", cfg["account"].get("email")),
+                              ("login_url", cfg["club"].get("login_url")),
+                              ("booking_url", cfg["club"].get("booking_url")))
+               if not v or "XXXXX" in v or v == "you@example.com"]
+    if missing:
+        sys.exit(f"config.toml still has placeholder values for: {', '.join(missing)}")
     cfg["account"]["password"] = cfg["account"].get("password") or os.environ.get("CR_PASSWORD", "")
     if not cfg["account"]["password"]:
         sys.exit("No password: set it in config.toml or export CR_PASSWORD.")
@@ -74,6 +93,18 @@ def login(page, cfg):
                  "button:has-text('Sign In')").first.click()
     page.wait_for_load_state("networkidle")
     log("Logged in.")
+
+
+def log_clock_offset(page):
+    """Compare this Mac's clock with the server's so a slow/fast clock shows up in the log."""
+    try:
+        resp = page.request.head(page.url)
+        server = parsedate_to_datetime(resp.headers["date"])
+        offset = (datetime.now(server.tzinfo) - server).total_seconds()
+        log(f"Clock check: this computer is {offset:+.1f}s vs the CourtReserve server "
+            "(server only reports whole seconds).")
+    except Exception as e:
+        log(f"Clock check skipped: {e}")
 
 
 def go_to_date(page, cfg, target):
@@ -276,6 +307,7 @@ def run_slot(cfg, slot_no, args):
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         login(page, cfg)
         page.goto(cfg["club"]["booking_url"], wait_until="networkidle")
+        log_clock_offset(page)
 
         if args.explore:
             log("Inspector open. Use 'Pick locator' to grab selectors, then close the browser.")
